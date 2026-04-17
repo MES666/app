@@ -75,6 +75,11 @@
         .btn-pri:disabled { opacity: 0.5; cursor: not-allowed; transform: none; }
         .btn-sec { background: transparent; border: 1.5px solid #D1D5DB; color: var(--text-muted); }
         .btn-sec:hover { background: #F8F9FA; }
+        
+        .progress-controls { display: flex; justify-content: center; gap: 10px; margin-top: 15px; padding-top: 15px; border-top: 1px solid #EAEAEA; }
+        .btn-sm { padding: 6px 14px; font-size: 0.75rem; border-radius: 20px; }
+        .btn-danger { background: var(--error); color: #fff; }
+        .btn-danger:hover { background: #A93226; }
 
         .res-screen { text-align: center; padding: 40px 20px; display: none; }
         .res-screen h2 { font-family: 'Cormorant Garamond', serif; font-size: 2rem; margin-bottom: 8px; color: var(--fr-blue); }
@@ -118,6 +123,9 @@
             <button class="btn btn-sec" id="prev-btn" onclick="app.goPrev()" disabled>← Назад</button>
             <button class="btn btn-pri" id="check-btn" onclick="app.validate()">Проверить</button>
             <button class="btn btn-pri" id="next-btn" onclick="app.goNext()" style="display:none;">Далее →</button>
+        </div>
+        <div class="progress-controls">
+            <button class="btn btn-sec btn-sm" onclick="app.clearProgress()">🗑️ Сбросить прогресс</button>
         </div>
     </main>
 
@@ -249,7 +257,9 @@ const LESSONS = {
         { type: 'test', q: 'Как переводится «Pour rien» в ответ на спасибо?', speak: "Pour rien.", opts: ["Не за что", "За ничто", "Ничего", "Без проблем"], correct: "Не за что" },
         { type: 'word_order', q: 'Соберите фразу: «Напишу Вам письмо»', speak: "Je vous écris une lettre.", words: ["Je", "vous", "écris", "une", "lettre."], correct: "Je vous écris une lettre." },
         { type: 'fill', q: 'Вставьте пропущенное слово (сторона/часть)', speak: "C'est très gentil de votre part.", context: "C'est très gentil de votre ___ .", correct: "part" },
-        { type: 'test', q: 'Что означает глагол «accompagner»?', speak: "Accompagner.", opts: ["Провожать", "Сопровождать машину", "Звонить", "Встречать"], correct: "Провожать" }
+        { type: 'test', q: 'Что означает глагол «accompagner»?', speak: "Accompagner.", opts: ["Провожать", "Сопровождать машину", "Звонить", "Встречать"], correct: "Провожать" },
+        { type: 'listening', q: 'Прослушайте и выберите правильный перевод', speak: "Je suis désolé, je ne comprends pas.", opts: ["Извините, я не понимаю", "Я очень рад вас видеть", "Где находится отель?", "Сколько это стоит?"], correct: "Извините, я не понимаю" },
+        { type: 'listening_fill', q: 'Прослушайте и вставьте пропущенное слово', speak: "Je voudrais réserver une chambre.", context: "Je voudrais ___ une chambre.", correct: "réserver" }
     ]}
 };
 
@@ -272,7 +282,36 @@ const app = {
             btn.onclick = () => this.switchLesson(parseInt(k));
             this.el.nav.appendChild(btn);
         });
-        this.switchLesson(1);
+        this.loadProgress();
+        this.switchLesson(this.current);
+    },
+
+    saveProgress() {
+        const progress = {
+            lesson: this.current,
+            exercise: this.idx,
+            points: this.pts,
+            completedLessons: JSON.parse(localStorage.getItem('fr_completedLessons') || '{}')
+        };
+        localStorage.setItem('fr_progress', JSON.stringify(progress));
+    },
+
+    loadProgress() {
+        const saved = localStorage.getItem('fr_progress');
+        if (saved) {
+            const data = JSON.parse(saved);
+            this.current = data.lesson || 1;
+            this.idx = data.exercise || 0;
+            this.pts = data.points || 0;
+        }
+    },
+
+    clearProgress() {
+        localStorage.removeItem('fr_progress');
+        localStorage.removeItem('fr_completedLessons');
+        this.current = 1;
+        this.idx = 0;
+        this.pts = 0;
     },
 
     speak() {
@@ -298,11 +337,12 @@ const app = {
             b.disabled = false;
         });
         this.render();
+        this.saveProgress();
     },
 
     render() {
         const ex = LESSONS[this.current].exercises[this.idx];
-        this.el.type.textContent = ex.type === 'test' ? 'Выбор перевода' : ex.type === 'word_order' ? 'Порядок слов' : 'Вставьте слово';
+        this.el.type.textContent = ex.type === 'test' || ex.type === 'listening' ? 'Выбор перевода' : ex.type === 'word_order' ? 'Порядок слов' : (ex.type === 'listening_fill' ? 'Аудирование: вставьте слово' : 'Вставьте слово');
         this.el.q.textContent = ex.q;
         this.speakText = ex.speak || "";
         this.el.box.innerHTML = '';
@@ -313,13 +353,17 @@ const app = {
         this.el.ptxt.textContent = `${this.idx + 1} / ${LESSONS[this.current].exercises.length}`;
         this.sel = null; this.orderArr = []; this.txtInput = "";
 
-        if (ex.type === 'test') {
+        if (ex.type === 'test' || ex.type === 'listening') {
             const grid = document.createElement('div'); grid.className = 'opt-grid';
             ex.opts.forEach(opt => {
                 const b = document.createElement('div'); b.className = 'opt-btn'; b.textContent = opt;
                 b.onclick = () => this.pickOpt(b, opt); grid.appendChild(b);
             });
             this.el.box.appendChild(grid);
+            // Auto-play audio for listening exercises
+            if (ex.type === 'listening') {
+                setTimeout(() => this.speak(), 300);
+            }
         } else if (ex.type === 'word_order') {
             const ans = document.createElement('div'); ans.className = 'word-area empty'; ans.id = 'ans-zone';
             const pool = document.createElement('div'); pool.className = 'word-pool';
@@ -331,10 +375,14 @@ const app = {
             this.el.box.append(ans, pool);
         } else {
             const inp = document.createElement('input'); inp.type = 'text'; inp.className = 'fill-field';
-            inp.placeholder = 'Введите слово на французском...';
+            inp.placeholder = ex.type === 'listening_fill' ? 'Прослушайте и введите слово...' : 'Введите слово на французском...';
             inp.oninput = e => this.txtInput = e.target.value.trim();
             this.el.box.innerHTML = `<div class="context-line">${ex.context.replace('___', '<u>...</u>')}</div>`;
             this.el.box.appendChild(inp);
+            // Auto-play audio for listening fill exercises
+            if (ex.type === 'listening_fill') {
+                setTimeout(() => this.speak(), 300);
+            }
         }
     },
 
@@ -372,7 +420,7 @@ const app = {
         let ok = false; 
         const clean = s => s.toLowerCase().replace(/[.,!?;:()]/g, '').replace(/\s+/g, ' ').trim();
         
-        if (ex.type === 'test') {
+        if (ex.type === 'test' || ex.type === 'listening') {
             if (!this.sel) return alert('Выберите вариант'); 
             ok = this.sel === ex.correct;
             document.querySelectorAll('.opt-btn').forEach(b => { 
@@ -399,6 +447,7 @@ const app = {
         this.el.fb.innerHTML = ok ? `<strong>✨ Parfait !</strong> Ответ верный.` : `<strong>⚠️ Внимание!</strong> Правильный вариант: <em>${ex.correct}</em>`;
         this.el.chk.style.display = 'none'; 
         this.el.nxt.style.display = 'inline-block';
+        this.saveProgress();
     },
 
     goNext() { 
@@ -407,6 +456,11 @@ const app = {
             this.tries = 0; 
             this.render(); 
         } else { 
+            // Save completed lesson
+            const completed = JSON.parse(localStorage.getItem('fr_completedLessons') || '{}');
+            completed[this.current] = true;
+            localStorage.setItem('fr_completedLessons', JSON.stringify(completed));
+            
             this.el.game.style.display = 'none'; 
             this.el.res.style.display = 'block'; 
             this.el.score.textContent = `${this.pts}/${LESSONS[this.current].exercises.length}`; 
@@ -425,6 +479,7 @@ const app = {
         this.el.game.style.display = 'block'; 
         this.el.res.style.display = 'none'; 
         this.render(); 
+        this.saveProgress();
     }
 };
 
